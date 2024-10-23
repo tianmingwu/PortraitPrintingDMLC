@@ -126,27 +126,41 @@
 
     public List<Trajectory> WriteTrajectoryTable(double deltaMu, MlcSequencer pair, double restPosition, double leafPosIncrement = 0.1)
     {
+        double eps = 0.01;
         List<Trajectory> table = new List<Trajectory>();
         
         double meterSet = 0;
 
-        double leadingLeafPosition = restPosition;
-        double trailingLeafPosition = restPosition;
-
         int lead = 0;
         int trail = 0;
 
-        while (meterSet + deltaMu < 1)
-        {
-            Console.WriteLine($"{pair.TotalLength}, {lead}, {trail}");
+        double leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.ElementAt(lead);
+        double trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.ElementAt(trail);
 
+        while (meterSet <= 1)
+        {
+            //Console.WriteLine(meterSet);
             if (lead < pair.TotalLength) // not done yet
             {
-                if (pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu > meterSet)// update leading Leaf Position
+                //Console.WriteLine(pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu);
+                //Console.WriteLine();
+
+                if (pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu < meterSet)// update leading Leaf Position
+                {
+                    // todo: search the lead position that is closest to meter set; that's the goal
+                    while (pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu < meterSet)
                     {
-                        leadingLeafPosition += leafPosIncrement * pair.LeadingLeafPositions.ElementAt(lead);
                         lead++;
                     }
+                    if (lead < pair.TotalLength)
+                    {
+                        leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.ElementAt(lead);
+                    }
+                    else
+                    {
+                        leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.Last();
+                    }
+                }
             }
             else
             {
@@ -155,10 +169,20 @@
 
             if (trail < pair.TotalLength) // not done yet
             {
-                if (pair.TrailingLeafMu.ElementAt(trail)/pair.TotalMu > meterSet) // update trailing leaf Position
+                if (pair.TrailingLeafMu.ElementAt(trail)/pair.TotalMu < meterSet) // update trailing leaf Position
                 {
-                    trailingLeafPosition += leafPosIncrement * pair.TrailingLeafPositions.ElementAt(trail);
-                    trail++;
+                    while (pair.TrailingLeafMu.ElementAt(trail)/pair.TotalMu < meterSet)
+                    {
+                        trail++;
+                    }
+                    if (trail < pair.TotalLength)
+                    {
+                        trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.ElementAt(trail);
+                    }
+                    else
+                    {
+                        trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.Last();
+                    }
                 }
             }
             else
