@@ -1,5 +1,7 @@
     using System.Drawing;
     using System.Linq;
+    using System.IO;
+    using System;
 
     public class ImageDigitizer
     {
@@ -126,73 +128,102 @@
 
     public List<Trajectory> WriteTrajectoryTable(double deltaMu, MlcSequencer pair, double restPosition, double leafPosIncrement = 0.1)
     {
-        double eps = 0.01;
         List<Trajectory> table = new List<Trajectory>();
         
+        // initializing
         double meterSet = 0;
-
         int lead = 0;
         int trail = 0;
-
-        double leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.ElementAt(lead);
-        double trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.ElementAt(trail);
+        double leadingLeafPosition = restPosition;
+        double trailingLeafPosition = restPosition;
 
         while (meterSet <= 1)
         {
-            //Console.WriteLine(meterSet);
-            if (lead < pair.TotalLength) // not done yet
+            if (pair.TotalLength > 0)
             {
-                //Console.WriteLine(pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu);
-                //Console.WriteLine();
-
-                if (pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu < meterSet)// update leading Leaf Position
+                if (lead < pair.TotalLength) // not done yet
                 {
-                    // todo: search the lead position that is closest to meter set; that's the goal
-                    while (pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu < meterSet)
+                    leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.ElementAt(lead);
+                    if (pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu < meterSet)// update leading Leaf Position
                     {
-                        lead++;
-                    }
-                    if (lead < pair.TotalLength)
-                    {
-                        leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.ElementAt(lead);
-                    }
-                    else
-                    {
-                        leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.Last();
+                        // todo: search the lead position that is closest to meter set; that's the goal
+                        while (pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu < meterSet)
+                        {
+                            lead++;
+                        }
+                        if (lead < pair.TotalLength)
+                        {
+                            leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.ElementAt(lead);
+                        }
+                        else
+                        {
+                            leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.Last();
+                        }
                     }
                 }
-            }
-            else
-            {
-                // done; stay put
-            }
-
-            if (trail < pair.TotalLength) // not done yet
-            {
-                if (pair.TrailingLeafMu.ElementAt(trail)/pair.TotalMu < meterSet) // update trailing leaf Position
+                else
                 {
-                    while (pair.TrailingLeafMu.ElementAt(trail)/pair.TotalMu < meterSet)
+                    // done; stay put
+                }
+
+                if (trail < pair.TotalLength) // not done yet
+                {
+                    trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.ElementAt(trail);
+                    if (pair.TrailingLeafMu.ElementAt(trail)/pair.TotalMu < meterSet) // update trailing leaf Position
                     {
-                        trail++;
-                    }
-                    if (trail < pair.TotalLength)
-                    {
-                        trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.ElementAt(trail);
-                    }
-                    else
-                    {
-                        trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.Last();
+                        while (pair.TrailingLeafMu.ElementAt(trail)/pair.TotalMu < meterSet)
+                        {
+                            trail++;
+                        }
+                        if (trail < pair.TotalLength)
+                        {
+                            trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.ElementAt(trail);
+                        }
+                        else
+                        {
+                            trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.Last();
+                        }
                     }
                 }
+                else
+                {
+                    // done; close trailing leaf
+                    trailingLeafPosition = leadingLeafPosition;
+                }
             }
-            else
-            {
-                // done; close trailing leaf
-                trailingLeafPosition = leadingLeafPosition;
-            }
-            
             table.Add(new Trajectory(meterSet, leadingLeafPosition, trailingLeafPosition));
             meterSet += deltaMu;
         }
         return table;
+    }
+
+    public static StringBuilder CreateMlcFileHeader(
+        string lastName, 
+        string firstName, 
+        string patientId, 
+        int numOfFields, 
+        string mlcModel="Varian 120M", 
+        double tolerance=0.5)
+    {
+        StringBuilder builder = new StringBuilder();
+        builder.AppendLine("File Rev = J");
+        builder.AppendLine("Treatment = Dynamic Dose");
+        builder.AppendLine($"Last Name = {lastName}");
+        builder.AppendLine($"First Name = {firstName}");
+        builder.AppendLine($"Patient ID = {patientId}");
+        builder.AppendLine($"Number of Fields = {numOfFields}");
+        builder.AppendLine($"Model = {mlcModel}");
+        builder.AppendLine($"Tolerance = {tolerance}");
+        builder.AppendLine();
+
+        return builder;
+    }
+
+    public static void WriteMlcFile()
+    {
+        string docPath = Path.Combine("./mlc", "test.mlc");
+
+        var header = CreateMlcFileHeader("ralph", "w", "007", 256);
+
+        File.WriteAllText(docPath, header.ToString());
     }
