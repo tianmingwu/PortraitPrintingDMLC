@@ -5,11 +5,13 @@
 
     public class ImageDigitizer
     {
-        public static double[,] Digitize(string fileName, int targetHeight=42, int targetWidth=140)
+        public static double[,] Digitize(string fileName, int targetHeight=42, int targetWidth=280)
         {
             Bitmap bmp = new Bitmap(fileName);
 
             double[,] arr = new double[targetHeight, targetWidth];
+
+            double[,] patchedArr = new double[60, targetWidth];
 
             Bitmap outputBmp = new Bitmap(targetWidth, targetHeight);
 
@@ -42,15 +44,34 @@
             {
                 for (int i=0;i<outputBmp.Width;i++)         // loop over image columns
                 {
-                    arr[j,i] = 255 - outputBmp.GetPixel(i, j).R;  // notice the change in row/column for height/width; Bitmap.GetPixel method
+                    //var pv = 255 - outputBmp.GetPixel(i, j).R;
+                    var pv = (int) 100 * (255 - outputBmp.GetPixel(i,j).R)/ 255;
+                    arr[j,i] = pv;  // notice the change in row/column for height/width; Bitmap.GetPixel method
+                    patchedArr[j+9, i] = pv;
                 }
             }
             
             outputBmp.Save("./images/rw_grayscale_resampled.bmp");
             Console.WriteLine($"new image size: {outputBmp.Width} x {outputBmp.Height}");
             Console.WriteLine($"new image resolution: {outputBmp.HorizontalResolution}, {outputBmp.VerticalResolution}");
+            // before returning arr, patch 0 (not irradiating)
+            
+            for (int j=0;j<9;j++)
+            {
+                for (int i=0;i<outputBmp.Width;i++)
+                {
+                    patchedArr[j, i] = 0;
+                }
+            }
+            for (int j=outputBmp.Height+9;j<9+outputBmp.Height+9;j++)
+            {
+                for (int i=0; i<outputBmp.Width;i++)
+                {
+                    patchedArr[j, i] = 0;
+                }
+            }
 
-            return arr;
+            return patchedArr;
         }
     }
 
@@ -67,7 +88,7 @@
         public List<double> TrailingLeafMu = new List<double>{}; // MU meter set for trailing leaf
 
         public double TotalMu = 0.0;
-        public int TotalLength = 0;
+        //public int TotalLength = 0;
         // constructor
         public MlcSequencer(List<double> intensityProfile)
         {
@@ -99,12 +120,8 @@
                     trailingMu -= val;
                     TrailingLeafMu.Add(trailingMu);
                 }
-
             }
-
             TotalMu = PositiveCoefficients.Sum();
-            TotalLength = PositiveCoefficients.Count;
-
         }
     }
 
@@ -126,75 +143,145 @@
 
     }
 
-    public List<Trajectory> WriteTrajectoryTable(double deltaMu, MlcSequencer pair, double restPosition, double leafPosIncrement = 0.1)
+    /// using unit MU increment
+    /// also index position
+    /// implementation of 
+    public static List<Trajectory> CreatePairTrajectoryTable(MlcSequencer pair)
     {
         List<Trajectory> table = new List<Trajectory>();
-        
-        // initializing
-        double meterSet = 0;
-        int lead = 0;
-        int trail = 0;
-        double leadingLeafPosition = restPosition;
-        double trailingLeafPosition = restPosition;
-
-        while (meterSet <= 1)
+        //int totalPairMu = (int) pair.TotalMu;
+        // if (totalFieldMu < totalPairMu)
+        // {
+        //     throw new ArgumentException("Invalid Value: Total field MU cannot be less than single pair MU");
+        // }
+        // handling 0 intensity profiles (no irradiation, MLC pair there will stay rest)
+        if (pair.TotalMu == 0)
         {
-            if (pair.TotalLength > 0)
+            for (int mu=0; mu<=pair.TotalMu; mu++)
             {
-                if (lead < pair.TotalLength) // not done yet
+                table.Add(new Trajectory(mu, 0, 0));
+            }
+        }
+        else
+        {
+            // initializing
+            int mu = 0;
+            int leadingIdx = 0; 
+            int trailingIdx = 0;
+            double leadingPos = 0;
+            double trailingPos = 0;
+
+            int leadingPositionLength = pair.LeadingLeafPositions.Count;
+            int trailingPositionLength = pair.TrailingLeafPositions.Count;
+
+            while (mu<=pair.TotalMu)
+            {   
+                if (mu<pair.LeadingLeafMu.ElementAt(leadingIdx))
                 {
-                    leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.ElementAt(lead);
-                    if (pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu < meterSet)// update leading Leaf Position
-                    {
-                        // todo: search the lead position that is closest to meter set; that's the goal
-                        while (pair.LeadingLeafMu.ElementAt(lead)/pair.TotalMu < meterSet)
-                        {
-                            lead++;
-                        }
-                        if (lead < pair.TotalLength)
-                        {
-                            leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.ElementAt(lead);
-                        }
-                        else
-                        {
-                            leadingLeafPosition = restPosition + leafPosIncrement * pair.LeadingLeafPositions.Last();
-                        }
-                    }
+                    leadingPos = pair.LeadingLeafPositions.ElementAt(leadingIdx);
                 }
                 else
                 {
-                    // done; stay put
+                    //if not at the end
+                    if (leadingIdx < leadingPositionLength-1)
+                    {
+                        // move
+                        leadingPos = pair.LeadingLeafPositions.ElementAt(leadingIdx+1);
+                        leadingIdx++;
+                    }
+                    else
+                    {
+                        // leading leaf stays at the end
+                        leadingPos = pair.LeadingLeafPositions.ElementAt(leadingIdx);
+                    }
+                     // update index
                 }
 
-                if (trail < pair.TotalLength) // not done yet
+                if (mu<pair.TrailingLeafMu.ElementAt(trailingIdx))
                 {
-                    trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.ElementAt(trail);
-                    if (pair.TrailingLeafMu.ElementAt(trail)/pair.TotalMu < meterSet) // update trailing leaf Position
-                    {
-                        while (pair.TrailingLeafMu.ElementAt(trail)/pair.TotalMu < meterSet)
-                        {
-                            trail++;
-                        }
-                        if (trail < pair.TotalLength)
-                        {
-                            trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.ElementAt(trail);
-                        }
-                        else
-                        {
-                            trailingLeafPosition = restPosition + leafPosIncrement * pair.TrailingLeafPositions.Last();
-                        }
-                    }
+                    trailingPos = pair.TrailingLeafPositions.ElementAt(trailingIdx);
                 }
                 else
                 {
-                    // done; close trailing leaf
-                    trailingLeafPosition = leadingLeafPosition;
+                    //if not at the end
+                    if (trailingIdx < trailingPositionLength-1)
+                    {
+                        // move
+                        trailingPos = pair.TrailingLeafPositions.ElementAt(trailingIdx+1);
+                        trailingIdx++;
+                    }
+                    else
+                    {
+                        trailingPos = leadingPos; // close trailing leaf at the end
+                    }
+                    
                 }
+
+                table.Add(new Trajectory(mu, leadingPos, trailingPos));
+                mu++;
             }
-            table.Add(new Trajectory(meterSet, leadingLeafPosition, trailingLeafPosition));
-            meterSet += deltaMu;
         }
         return table;
+        
+    }
+
+    public static List<List<Trajectory>> CreateFieldTrajectoryTable(List<MlcSequencer> pairs, int fieldsLimit = 499)
+    {
+        List<List<Trajectory>> tables = new List<List<Trajectory>>();
+
+        // find out the max field mu for all pairs
+        int totalFieldMu = (int) pairs.Select(x=>x.TotalMu).Max();
+
+        Console.WriteLine(totalFieldMu);
+
+        foreach(var pair in pairs)
+        {
+            List<Trajectory> seq = CreatePairTrajectoryTable(pair);
+
+            if (seq.Count == 1) // static pair
+            {
+                for (int i=1;i<fieldsLimit;i++)
+                {
+                    seq.Add(new Trajectory(i, 0, 0));
+                }
+                tables.Add(seq);
+            }
+
+            else if (seq.Count < fieldsLimit) // not enough pair
+            {
+                Trajectory lastTrajectory = seq.Last();
+                for (int i=seq.Count;i<fieldsLimit;i++)
+                {
+                    seq.Add(new Trajectory(i, lastTrajectory.LeadingLeafPos, lastTrajectory.TrailingLeafPos));
+                }
+                tables.Add(seq);
+            }
+            else
+            {
+                // sampling algorithm?
+                List<Trajectory> newSeq = new List<Trajectory>();
+                for (int i=0; i<fieldsLimit; i++)
+                {
+                    int idx = (int) i * (seq.Count / fieldsLimit);
+                    newSeq.Add(seq[idx]);
+                }
+                tables.Add(newSeq);
+            }           
+        }
+
+        return tables;
+    }
+
+    public static List<List<Trajectory>> CreateFieldTrajectoryForImageArray(double[,] arr)
+    {
+        List<double> row;
+        List<MlcSequencer> pairs = new List<MlcSequencer>();
+        for(int i=0;i<arr.GetLength(0);i++)
+        {
+            row = Enumerable.Range(0, arr.GetLength(1)).Select(x=>arr[i, x]).ToList();
+            pairs.Add(new MlcSequencer(row));
+        }
+        return CreateFieldTrajectoryTable(pairs);
     }
 
     public static StringBuilder CreateMlcFileHeader(
@@ -205,25 +292,85 @@
         string mlcModel="Varian 120M", 
         double tolerance=0.5)
     {
-        StringBuilder builder = new StringBuilder();
-        builder.AppendLine("File Rev = J");
-        builder.AppendLine("Treatment = Dynamic Dose");
-        builder.AppendLine($"Last Name = {lastName}");
-        builder.AppendLine($"First Name = {firstName}");
-        builder.AppendLine($"Patient ID = {patientId}");
-        builder.AppendLine($"Number of Fields = {numOfFields}");
-        builder.AppendLine($"Model = {mlcModel}");
-        builder.AppendLine($"Tolerance = {tolerance}");
-        builder.AppendLine();
+        StringBuilder header = new StringBuilder();
+        header.AppendLine("File Rev = J");
+        header.AppendLine("Treatment = Dynamic Dose");
+        header.AppendLine($"Last Name = {lastName}");
+        header.AppendLine($"First Name = {firstName}");
+        header.AppendLine($"Patient ID = {patientId}");
+        header.AppendLine($"Number of Fields = {numOfFields}");
+        header.AppendLine($"Model = {mlcModel}");
+        header.AppendLine($"Tolerance = {tolerance}");
+        header.AppendLine();
 
-        return builder;
+        return header;
     }
 
-    public static void WriteMlcFile()
+    public static void WriteMlcFile(List<List<Trajectory>> trajectories)
     {
         string docPath = Path.Combine("./mlc", "test.mlc");
 
-        var header = CreateMlcFileHeader("ralph", "w", "007", 256);
+        // compute the length of 
+        int totalMu = trajectories.FirstOrDefault().Count;
+
+        var header = CreateMlcFileHeader("ralph", "w", "007", totalMu);
+
+        //File.WriteAllText(docPath, header.ToString());
+        double ABankRestPosition =  7.00;
+        double BBankRestPosition = -7.00;
+
+        double position;
+        Trajectory trajectory;
+
+        for(int meterSet=0;meterSet<totalMu;meterSet++)
+        {
+            header.AppendLine($"Field = 0-{meterSet}");
+            header.AppendLine($"Index = {(double) meterSet/(totalMu-1):0.0000}");
+            header.AppendLine("Carriage Group = 1");
+            header.AppendLine("Operator = ");
+            header.AppendLine("Collimator = 0.0");
+
+            // move from right to left
+            // A bank, x2, trailing leaf
+            // B bank, x1, leading leaf
+            
+            // A bank
+            for(int leaf=1;leaf<=60;leaf++)
+            {
+                trajectory = trajectories[60-leaf][meterSet];
+                position =  -ABankRestPosition + (14.0 / 280) * trajectory.TrailingLeafPos;
+                if (leaf<10)
+                {
+                    header.AppendLine($"Leaf  {leaf}A = {position:0.000}");
+                }
+                else
+                {
+                    header.AppendLine($"Leaf {leaf}A = {position:0.000}");
+                }
+            }
+            // B bank
+            for(int leaf=1;leaf<=60;leaf++)
+            {
+                trajectory = trajectories[60-leaf][meterSet];
+                position = -BBankRestPosition - (14.0 / 280) * trajectory.LeadingLeafPos;
+
+                if (leaf<10)
+                {
+                    header.AppendLine($"Leaf  {leaf}B = {position:0.000}");
+                }
+                else
+                {
+                    header.AppendLine($"Leaf {leaf}B = {position:0.000}");
+                }
+            }
+
+            header.AppendLine("Note = 0");
+            header.AppendLine("Shape = 0");
+            header.AppendLine("Magnification = 1.00");
+            header.AppendLine();
+        }
+
+        header.AppendLine("CRC = 1234");
 
         File.WriteAllText(docPath, header.ToString());
     }
