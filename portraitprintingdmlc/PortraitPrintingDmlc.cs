@@ -3,76 +3,84 @@
     using System.IO;
     using System;
 
-    public class ImageDigitizer
+    /// <summary>
+    /// Digitize returns a 2-dimensional double array, takes import a bmp file, assumes 42 lines of leaf out of 60 pairs will be used, and 
+    /// 14cm of leaf traversing distance, with 0.05cm leaf motion resolution, that is 280 columns of leaf position
+    /// compression factor is for setting up "proper" intensity latitude to make sure not exceeding MLC sequencing 500 limit
+    /// </summary>
+    public static double[,] Digitize(string fileName, double compressionFactor = 100.0, int targetHeight=42, int targetWidth=280, int leafPairs=60)
     {
-        public static double[,] Digitize(string fileName, int targetHeight=42, int targetWidth=280)
+        Bitmap bmp = new Bitmap(fileName);
+
+        //double[,] arr = new double[targetHeight, targetWidth];
+
+        double[,] arr = new double[leafPairs, targetWidth];
+
+        Bitmap outputBmp = new Bitmap(targetWidth, targetHeight);
+        
+        double pv = 0;
+        int shift = (int) (leafPairs-targetHeight)/2;
+        // change original BMP to gray scale
+        for (int i=0;i<bmp.Width;i++)
         {
-            Bitmap bmp = new Bitmap(fileName);
-
-            double[,] arr = new double[targetHeight, targetWidth];
-
-            double[,] patchedArr = new double[60, targetWidth];
-
-            Bitmap outputBmp = new Bitmap(targetWidth, targetHeight);
-
-            // change original BMP to gray scale
-            for (int i=0;i<bmp.Width;i++)
+            for (int j=0;j<bmp.Height;j++)
             {
-                for (int j=0;j<bmp.Height;j++)
-                {
-                    Color pixelColor = bmp.GetPixel(i, j);
-                    byte gray = (byte) (0.21 * pixelColor.R + 0.72 * pixelColor.G + 0.07 * pixelColor.B);
-                    Color newColor = Color.FromArgb(gray, gray, gray);
-                    bmp.SetPixel(i, j, newColor);
-                }
+                Color pixelColor = bmp.GetPixel(i, j);
+                byte gray = (byte) (0.21 * pixelColor.R + 0.72 * pixelColor.G + 0.07 * pixelColor.B);
+                Color newColor = Color.FromArgb(gray, gray, gray);
+                bmp.SetPixel(i, j, newColor);
             }
-
-            // adjust resolution
-            outputBmp.SetResolution(
-                bmp.HorizontalResolution * targetWidth / bmp.Width,
-                bmp.VerticalResolution * targetHeight /  bmp.Height
-            );
-
-            // redraw the original bmp to the target size
-            using (Graphics g = Graphics.FromImage(outputBmp))
-            {
-                g.DrawImage(bmp, new Rectangle(0, 0, targetWidth, targetHeight));
-            }
-
-            // extract array data from the resampled bmp; 
-            for (int j=0;j<outputBmp.Height;j++)            // loop over image rows
-            {
-                for (int i=0;i<outputBmp.Width;i++)         // loop over image columns
-                {
-                    //var pv = 255 - outputBmp.GetPixel(i, j).R;
-                    var pv = (int) 100 * (255 - outputBmp.GetPixel(i,j).R)/ 255;
-                    arr[j,i] = pv;  // notice the change in row/column for height/width; Bitmap.GetPixel method
-                    patchedArr[j+9, i] = pv;
-                }
-            }
-            
-            outputBmp.Save("./images/rw_grayscale_resampled.bmp");
-            Console.WriteLine($"new image size: {outputBmp.Width} x {outputBmp.Height}");
-            Console.WriteLine($"new image resolution: {outputBmp.HorizontalResolution}, {outputBmp.VerticalResolution}");
-            // before returning arr, patch 0 (not irradiating)
-            
-            for (int j=0;j<9;j++)
-            {
-                for (int i=0;i<outputBmp.Width;i++)
-                {
-                    patchedArr[j, i] = 0;
-                }
-            }
-            for (int j=outputBmp.Height+9;j<9+outputBmp.Height+9;j++)
-            {
-                for (int i=0; i<outputBmp.Width;i++)
-                {
-                    patchedArr[j, i] = 0;
-                }
-            }
-
-            return patchedArr;
         }
+
+        // adjust resolution
+        outputBmp.SetResolution(
+            bmp.HorizontalResolution * targetWidth / bmp.Width,
+            bmp.VerticalResolution * targetHeight /  bmp.Height
+        );
+
+        // redraw the original bmp to the outputBmp with the targeting sizes of the MLC intensity map
+        using (Graphics g = Graphics.FromImage(outputBmp))
+        {
+            g.DrawImage(bmp, new Rectangle(0, 0, targetWidth, targetHeight));
+        }
+
+        // top portion blanks (not irradiated)
+        for (int j=0;j<shift;j++)
+        {
+            for (int i=0;i<outputBmp.Width;i++)
+            {
+                arr[j, i] = 0;
+            }
+        }
+        // extract array data from the resampled bmp for middle portion MLC map
+        for (int j=0;j<outputBmp.Height;j++)            // loop over image rows
+        {
+            for (int i=0;i<outputBmp.Width;i++)         // loop over image columns
+            {
+                //var pv = 255 - outputBmp.GetPixel(i, j).R;
+                // also using a latitude modifier to give "proper" MU increment;
+                // the MLC sequencing file total 500 positions, i.e., 500 MU meterset can be used;
+
+                //var pv = (int) (255 - outputBmp.GetPixel(i,j).R) * (100 / 255);
+                //arr[j,i] = pv;  // notice the change in row/column for height/width; Bitmap.GetPixel method
+                pv = (double) (255 - outputBmp.GetPixel(i,j).R);
+                pv /= 255.0;
+                arr[j+shift, i] = pv * compressionFactor;
+            }
+        }
+        // bottom portion blanks (not irradiated)
+        for (int j=outputBmp.Height+shift;j<outputBmp.Height+shift+shift;j++)
+        {
+            for (int i=0; i<outputBmp.Width;i++)
+            {
+                arr[j, i] = 0;
+            }
+        }
+
+        outputBmp.Save("./images/rw_grayscale_resampled.bmp");
+        //Console.WriteLine($"new image size: {outputBmp.Width} x {outputBmp.Height}");
+        //Console.WriteLine($"new image resolution: {outputBmp.HorizontalResolution}, {outputBmp.VerticalResolution}");
+        return arr;
     }
 
     public class MlcSequencer
@@ -80,32 +88,37 @@
         // in this implementation, leaf is moving from right to left
         public List<double> TrailingLeafPositions = new List<double>{};
         public List<double> LeadingLeafPositions = new List<double>{};
-
-        public List<double> PositiveCoefficients = new List<double>{}; // incremental changes in intensity from one point along the profile to the next; positive
-        public List<double> NegativeCoefficients = new List<double>{}; // incremental changes in intensity from one point along the profile to the next; negative
-
         public List<double> LeadingLeafMu = new List<double>{}; // MU meter set for leading leaf
         public List<double> TrailingLeafMu = new List<double>{}; // MU meter set for trailing leaf
 
         public double TotalMu = 0.0;
-        //public int TotalLength = 0;
+        
         // constructor
         public MlcSequencer(List<double> intensityProfile)
         {
-            // From Eq(6) in L.Ma et al paper: intensity profile should be patched with 0
-            // add leading zero
-            intensityProfile.Insert(0, 0);
-            // add trailing zero
-            intensityProfile.Add(0);
+             // From Eq(6) in L.Ma et al paper: intensity profile should be patched with 0
+            List<double> intensity = new List<double>{0};
+
+            // hard copy
+            for (int i=0;i<intensityProfile.Count;i++)
+            {
+                intensity.Add(intensityProfile.ElementAt(i));
+            }
+
+            // patch trailing zero
+            intensity.Add(0);
 
             // add MU trackers
             double leadingMu = 0;
             double trailingMu = 0;
 
-            //
-            for (int i=intensityProfile.Count-2; i>-1; i--)
+            // add lists for positive and negative coefficients 
+            List<double> PositiveCoefficients = new List<double>{}; // incremental changes in intensity from one point along the profile to the next; positive
+            List<double> NegativeCoefficients = new List<double>{}; // incremental changes in intensity from one point along the profile to the next; negative
+
+            for (int i=intensity.Count-2; i>-1; i--)
             {
-                var val = intensityProfile.ElementAt(i+1) - intensityProfile.ElementAt(i);
+                var val = intensity.ElementAt(i+1) - intensity.ElementAt(i);
                 if (val > 0)
                 {
                     PositiveCoefficients.Add(val);
@@ -121,10 +134,48 @@
                     TrailingLeafMu.Add(trailingMu);
                 }
             }
-            TotalMu = PositiveCoefficients.Sum();
+            TotalMu = GetTotalMu();
+        }
+
+        internal double GetTotalMu()
+        {
+           try
+           {
+            return TrailingLeafMu.Last();
+           }
+           catch(InvalidOperationException)
+           {
+            return 0;
+           }
+        }
+        internal double GetTrailingMu()
+        {
+           try
+           {
+            return TrailingLeafMu.Last();
+           }
+           catch(InvalidOperationException)
+           {
+            return 0;
+           }
+        }
+        internal double GetLeadingMu()
+        {
+           try
+           {
+            return LeadingLeafMu.Last();
+           }
+           catch(InvalidOperationException)
+           {
+            return 0;
+           }
         }
     }
 
+    /// <summary>
+    /// Trajectory structure, contains meterset, leading leaf position and trailing leaf position
+    /// Gives a one instant record for a pair of leaf at a particular meter set
+    /// </summary>
     public struct Trajectory
     {
         public double MeterSet {get; }
@@ -140,20 +191,16 @@
 
         public override string ToString() => $"MeterSet, leading, trailing: {MeterSet}, {LeadingLeafPos}, {TrailingLeafPos}";
 
-
     }
 
     /// using unit MU increment
     /// also index position
-    /// implementation of 
+    /// implementation of Ma et al, Phys. Med. Biol. Optimized leaf-setting algorithm
     public static List<Trajectory> CreatePairTrajectoryTable(MlcSequencer pair)
     {
+        // trajectory table is a list of trajectories
         List<Trajectory> table = new List<Trajectory>();
-        //int totalPairMu = (int) pair.TotalMu;
-        // if (totalFieldMu < totalPairMu)
-        // {
-        //     throw new ArgumentException("Invalid Value: Total field MU cannot be less than single pair MU");
-        // }
+       
         // handling 0 intensity profiles (no irradiation, MLC pair there will stay rest)
         if (pair.TotalMu == 0)
         {
@@ -232,7 +279,7 @@
         // find out the max field mu for all pairs
         int totalFieldMu = (int) pairs.Select(x=>x.TotalMu).Max();
 
-        Console.WriteLine(totalFieldMu);
+        Console.WriteLine($"field trajectory using total MU {totalFieldMu}, ideally this number getting close but smaller than {fieldsLimit}; if not, consider changing the compression factor (from 1 to 255)");
 
         foreach(var pair in pairs)
         {
@@ -272,15 +319,58 @@
         return tables;
     }
 
-    public static List<List<Trajectory>> CreateFieldTrajectoryForImageArray(double[,] arr)
+    public static List<MlcSequencer> CreatePairsForImageFile(string imgFile, int fieldsLimit=499)
     {
         List<double> row;
+        bool unsatisfied = true;
+        bool notReached = true;
+
+        double compressionFactor = 5.0;
+        int totalFieldMu;
+
         List<MlcSequencer> pairs = new List<MlcSequencer>();
-        for(int i=0;i<arr.GetLength(0);i++)
+
+        while (unsatisfied | notReached)
         {
-            row = Enumerable.Range(0, arr.GetLength(1)).Select(x=>arr[i, x]).ToList();
-            pairs.Add(new MlcSequencer(row));
+            Console.WriteLine($"try compression factor {compressionFactor}");
+            
+            var arr = Digitize(imgFile, compressionFactor);
+
+            for(int i=0;i<arr.GetLength(0);i++)
+            {
+                row = Enumerable.Range(0, arr.GetLength(1)).Select(x=>arr[i, x]).ToList();
+                pairs.Add(new MlcSequencer(row));
+            }
+
+            // find out the max field mu for all pairs
+            totalFieldMu = (int) pairs.Select(x=>x.TotalMu).Max();
+            if (totalFieldMu>fieldsLimit)
+            {
+                unsatisfied = true;
+                notReached = false;
+                compressionFactor -= 5.0;
+            }
+            else
+            {
+                if (notReached)
+                {
+                    unsatisfied = true;
+                }
+                else
+                {
+                    unsatisfied = false;
+                }
+                compressionFactor += 5.0;
+            }
         }
+        Console.WriteLine($"Compression factor {compressionFactor}, completed! moving to next");
+        return pairs;
+    }
+    
+    public static List<List<Trajectory>> CreateFieldTrajectoryForImageFile(string imgFile)
+    {
+        List<double> row;
+        List<MlcSequencer> pairs = CreatePairsForImageFile(imgFile);
         return CreateFieldTrajectoryTable(pairs);
     }
 
