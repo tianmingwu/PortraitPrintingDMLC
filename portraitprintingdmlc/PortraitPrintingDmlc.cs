@@ -8,7 +8,6 @@
     /// <summary>
     /// Digitize returns a 2-dimensional double array, takes import a bmp file, assumes 42 lines of leaf out of 60 pairs will be used, and 
     /// 14cm of leaf traversing distance, with 0.05cm leaf motion resolution, that is 280 columns of leaf position
-    /// 
     /// </summary>
     public static double[,] Digitize(string fileName, int targetHeight=42, int targetWidth=280, int leafPairs=60)
     {
@@ -18,7 +17,6 @@
 
         Bitmap outputBmp = new Bitmap(targetWidth, targetHeight);
         
-        double pv = 0;
         int shift = (int) (leafPairs-targetHeight)/2;
 
         // change original BMP to gray scale
@@ -58,12 +56,9 @@
         {
             for (int i=0;i<outputBmp.Width;i++)         // loop over image columns
             {
-                //var pv = (int) (255 - outputBmp.GetPixel(i,j).R) * (100 / 255);
                 // notice the change in row/column for height/width; Bitmap.GetPixel method
-                pv = (double) (255 - outputBmp.GetPixel(i,j).R);
-                // pv /= 255.0;
-                //arr[j+shift, i] = pv * compressionFactor;
-                arr[j+shift, i] = pv; 
+                // also the reverse of black/white
+                arr[j+shift, i] = (double) (255 - outputBmp.GetPixel(i,j).R);
             }
         }
         // bottom portion blanks (not irradiated)
@@ -75,7 +70,7 @@
             }
         }
 
-        outputBmp.Save("./images/rw_grayscaled_resampled.bmp");
+        outputBmp.Save("./images/_grayscaled_resampled.bmp");
         //Console.WriteLine($"new image size: {outputBmp.Width} x {outputBmp.Height}");
         //Console.WriteLine($"new image resolution: {outputBmp.HorizontalResolution}, {outputBmp.VerticalResolution}");
         return arr;
@@ -263,7 +258,7 @@
                 table.Add(new Trajectory(mu, leadingPos, trailingPos));
                 mu++;
             }
-            
+
             //force leaf closing at the end
             trailingPos = leadingPos;
             table.Add(new Trajectory(mu, leadingPos, trailingPos));
